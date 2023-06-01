@@ -1,10 +1,16 @@
 #!/bin/bash
 
+#Ejemplo de uso:sudo ./massnmap.sh lista_ip.txt "nmap -sV -p- -O"
+#               sudo ./massnmap.sh (archivo con la lista de ip) "comando de nmap sin especifica output"
+
 # Verifica si se proporcionó un archivo de lista de IP's y un comando de Nmap como parámetros
 if [ -z "$1" ] || [ -z "$2" ]; then
     echo "Debe proporcionar un archivo de lista de IP's y un comando de Nmap como parámetros."
     exit 1
 fi
+
+# Número de escaneos simultáneos
+num_concurrent_scans=2
 
 # Archivo con la lista de direcciones IP (una IP por línea)
 input_file="$1"
@@ -15,12 +21,8 @@ nmap_command="${@:2}"
 # Nombre del archivo de progreso
 progress_file="progreso.txt"
 
-# Número de escaneos simultáneos
-num_concurrent_scans=2
-
-# Calcula la cantidad de scans completados
-num_completed_scans=$(cat $progress_file | grep Completado | wc -l)
-
+# Variable que indica cada cuantos segundos se debe actualizar el dashboard   
+update_time_dashboard=1
 
 # Variable para contar el número de escaneos en progreso
 num_scans_in_progress=0
@@ -28,37 +30,48 @@ num_scans_in_progress=0
 # Cuenta las lineas que hay en el archivo proporcionado
 total_lines=($(wc -l < "$input_file"))
 
+# Variable que determina cada cuanto se debe refrescar el dashboard
+refresh_time_dashboard=2
+
 # Función para mostrar el progreso de cada escaneo cada 5 segundos
 function mostrar_progreso() {
     while true; do
-        sleep 2
+        sleep $refresh_time_dashboard
         clear
         echo "=========================== MassNmap =========================="
-        echo "$num_completed_scans / $total_lines"
+        echo "Total IPS a escanear: $total_lines"
+        echo "$nmap_command"
+        echo "$($!)"
         cat  "$progress_file"
         echo "==============================================================="
     done
 }
 # Limpia el archivo de progreso antes de comenzar
-echo "" > "$progress_file"
+$(rm $progress_file)
 
 # Inicia la función de progreso en segundo plano
 mostrar_progreso &
 
+process_pid=$!
+
+# Trap para finalizar la función de progreso cuando finalice el script
+trap "kill $process_pid >/dev/null 2>&1" EXIT
+
 # Función para ejecutar el escaneo de una IP
 function ejecutar_escaneo() {
     ip=$1
+    # Hora inicio del escaneo
+    hora_inicio=$(date +"%H:%M")
     # Agrega la IP al archivo de progreso con el estado "En progreso"
-    echo "IP: $ip - Estado: En progreso" >> "$progress_file"
+    echo "IP: $ip - En progreso" >> "$progress_file"
     # Ejecuta el comando de Nmap para la IP con el nombre de archivo de salida
     eval "$nmap_command -oN ${ip}.txt $ip"
     # Verifica si el escaneo se completó exitosamente
     if [ $? -eq 0 ]; then
-        
         # Obtiene la hora local en formato "hora:minuto"
         hora_completado=$(date +"%H:%M")
         # Actualiza el estado de la IP a "Completado" con la hora de finalización
-        sed -i "s/IP: $ip - Estado: En progreso/IP: $ip - Estado: Completado - Hora Completado: $hora_completado/g" "$progress_file"
+        sed -i "s/IP: $ip - En progreso/IP: $ip - Completado $hora_completado/g" "$progress_file"
     else
         echo "Error al ejecutar el escaneo para la IP: $ip" >> "$progress_file"
     fi
@@ -80,6 +93,7 @@ while IFS= read -r ip; do
         ((num_scans_in_progress++))
     fi
 done < "$input_file"
-
-# Espera a que finalicen los escaneos restantes
-wait
+wait 
+# No funciona el aviso de finalizacion del escaneo Je
+echo "Escaneo finalizado"
+exit 0
