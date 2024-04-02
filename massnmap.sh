@@ -10,7 +10,7 @@ if [ -z "$1" ] || [ -z "$2" ]; then
 fi
 
 # Número de escaneos simultáneos
-num_concurrent_scans=2
+num_concurrent_scans=12
 
 # Archivo con la lista de direcciones IP (una IP por línea)
 input_file="$1"
@@ -65,7 +65,7 @@ function ejecutar_escaneo() {
     # Agrega la IP al archivo de progreso con el estado "En progreso"
     echo "IP: $ip - En progreso" >> "$progress_file"
     # Ejecuta el comando de Nmap para la IP con el nombre de archivo de salida
-    eval "$nmap_command -oN ${ip}.txt $ip"
+    eval "$nmap_command -oX ${ip}_nmap_xml.txt -oN ${ip}_nmap.txt $ip"
     # Verifica si el escaneo se completó exitosamente
     if [ $? -eq 0 ]; then
         # Obtiene la hora local en formato "hora:minuto"
@@ -79,19 +79,15 @@ function ejecutar_escaneo() {
 
 # Lee las IP's del archivo y ejecuta los escaneos
 while IFS= read -r ip; do
-    # Verifica si la línea es una IP válida
-    if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        # Verifica si se alcanzó el límite de escaneos simultáneos
-        if [ $num_scans_in_progress -ge $num_concurrent_scans ]; then
-            # Espera a que finalice algún escaneo antes de continuar
-            wait -n
-            ((num_scans_in_progress--))
-        fi
-
-        # Ejecuta el escaneo en segundo plano
-        ejecutar_escaneo "$ip" &
-        ((num_scans_in_progress++))
+    # Verifica si se alcanzó el límite de escaneos simultáneos
+    if [ $num_scans_in_progress -ge $num_concurrent_scans ]; then
+        # Espera a que finalice algún escaneo antes de continuar
+        wait -n
+        ((num_scans_in_progress--))
     fi
+    # Ejecuta el escaneo en segundo plano
+    ejecutar_escaneo "$ip" &
+    ((num_scans_in_progress++))
 done < "$input_file"
 wait 
 # No funciona el aviso de finalizacion del escaneo Je
